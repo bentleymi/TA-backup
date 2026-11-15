@@ -1,0 +1,7 @@
+<application>
+  <nav>
+    <view name="backup_overview" />
+    <view name="backup_metrics" />
+    <search label="TA-backup Events" search="search index=main sourcetype=backup:status" />
+  </nav>
+</application>

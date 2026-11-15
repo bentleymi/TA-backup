@@ -1,0 +1,55 @@
+TA-backup
+====
+
+Collects backup-system health: last snapshot age and count for restic and borg repositories (from a config file), and active backup-related systemd timers (restic/borg/b2/rclone/duplicity/timeshift units). Emits JSON events to index=main (sourcetype backup:status) and backup.* metrics to index=metrics (sourcetype backup:metrics) - configured flag, snapshot counts, snapshot age in hours, active timer count - with dashboards.
+
+Prerequisites
+-------------
+  * Optional: a repo config at local/backup.conf (restic_repository=borg_repository=...) and the restic/borg CLI + passwords; absent hosts report 'not-configured'
+  * systemd timers are used for cadence signals; systemd required
+  * Splunk Enterprise or Universal Forwarder 9.x - 10.6 (forwarder recommended
+    on monitored hosts).
+  * A metrics-typed index (default name: metrics) on the indexer:
+
+      [metrics]
+      datatype = metric
+
+    Forwarders only need that index to exist on the indexer side.
+  * No network egress, no root requirement beyond the Splunk service account.
+    Fully standalone add-on with no dependencies.
+
+Install
+-------
+Install on each monitored host (Apps > Install app from file, splunk install
+app, or deployment server), restart Splunk, then verify:
+
+  index=main sourcetype="backup:status" | head
+
+Search quick reference
+----------------------
+  index=main sourcetype="backup:status" | head
+  | mcatalog values(metric_name) where index=metrics metric_name="backup.*" by host
+  | mstats avg("backup.*") where index=metrics span=60s by host
+
+Usage
+-----
+Events: index=main sourcetype=backup:status  (per-backend JSON: configured, snapshots, last age)
+Metrics: backup.<backend>_snapshots, backup.<backend>_last_age_hours, backup.timers_active
+Configure repositories in local/backup.conf, then restart Splunk.
+Dashboards: TA-Backup > Backup Overview / Backup Metrics
+
+Configure
+---------
+Override the interval or destination index in etc/apps/TA-backup/local/inputs.conf
+(never edit default/).
+
+Troubleshooting
+---------------
+  * restic/borg require the password available to splunkd (env file in local/ or system environment).
+  * A host with no backup configured is normal and reports status 'none' - not an alarm.
+
+License
+-------
+SOURCE-AVAILABLE (see LICENSE) - free personal, educational and evaluation
+use; commercial or production use requires a paid license from BentleyPC
+LLC (https://www.bentleypc.com).
