@@ -3,43 +3,71 @@
   <description>Collects backup-system health: last snapshot age and count for restic and borg repositories (from a config file), and active backup-related systemd timers</description>
   <row>
     <panel>
-      <title>Hosts Reporting (latest)</title>
+      <title>Backup timers (per host, latest)</title>
+      <single>
+        <search>
+          <query>| mstats avg("backup.backup_timers") as value where index=metrics span=5m
+| fields - _time | tail 1</query>
+          <done/>
+        </search>
+      </single>
+    </panel>
+    <panel>
+      <title>Backup tools configured (per host, latest)</title>
+      <single>
+        <search>
+          <query>| mstats avg("backup.configured") as value where index=metrics span=5m
+| fields - _time | tail 1</query>
+          <done/>
+        </search>
+      </single>
+    </panel>
+    <panel>
+      <title>Stale backup timers (per host, latest)</title>
+      <single>
+        <search>
+          <query>| mstats avg("backup.timers_stale") as value where index=metrics span=5m
+| fields - _time | tail 1</query>
+          <done/>
+        </search>
+      </single>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <title>Backends - latest per host</title>
       <table>
         <search>
           <query>index=main sourcetype="backup:status"
-| stats latest(_time) as "Last seen", count as Reports by host
-| table host "Last seen" Reports</query>
+| dedup host
+| rex field=_raw max_match=0 "\"(?&lt;k&gt;[^\"]+)\":\s*(?&lt;o&gt;\{[^{}]*\})"
+| where match(o,"\"configured\"")
+| eval z=mvzip(k,o,"^^")
+| mvexpand z
+| rex field=z "^(?&lt;k&gt;[^^]+)\^\^(?&lt;o&gt;.+)$"
+| spath input=o path=configured | spath input=o path=snapshots | spath input=o path=age_hours | spath input=o path=last_ts
+| table host k configured snapshots age_hours last_ts</query>
           <done/>
         </search>
+        <option name="count">100</option>
         <option name="drilldown">none</option>
       </table>
     </panel>
   </row>
   <row>
     <panel>
-      <title>Distinct backup.* Metrics (last hour)</title>
-      <single>
-        <search>
-          <query>| mcatalog values(metric_name) as m where index=metrics metric_name="backup.*"
-| eval count=mvcount(m)</query>
-          <done/>
-        </search>
-        <option name="underLabel">backup.* metrics streaming</option>
-      </single>
-    </panel>
-  </row>
-  <row>
-    <panel>
-      <title>Issues (newest first)</title>
+      <title>Stale backup timers (units past their cycle)</title>
       <table>
         <search>
-          <query>index=main sourcetype="backup:status" _raw="*alarm*"
-| sort - _time
-| table _time host _raw
-| rename _raw as Event
-| head 200</query>
+          <query>index=main sourcetype="backup:status"
+| dedup host
+| spath input=_raw output=x path=stale_timers{}
+| mvexpand x
+| rename x as "unit"
+| table host "unit"</query>
           <done/>
         </search>
+        <option name="count">50</option>
         <option name="drilldown">none</option>
       </table>
     </panel>
