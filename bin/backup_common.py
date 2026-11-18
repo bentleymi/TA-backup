@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 CONF = os.path.join(
     os.environ.get("SPLUNK_HOME", "/opt/splunk"),
@@ -13,7 +13,11 @@ CONF = os.path.join(
 )
 CONF_KEYS = ("restic_repository", "restic_password", "borg_repository", "borg_passphrase")
 
-TIMER_RE = re.compile(r"(restic|borg|duplicity|rclone|timeshift|s3cmd|b2|backup)", re.IGNORECASE)
+TIMER_RE = re.compile(
+    r"\b(restic|restbak|borgbackup|borgmatic|borg|burp|rclone|b2cli|b2|duply"
+    r"|duplicity|timeshift|rsnapshot|s3cmd)\b",
+    re.IGNORECASE,
+)
 TIMER_TS = re.compile(r"^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})")
 DATE_TOKEN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_TOKEN = re.compile(r"^\d{2}:\d{2}:\d{2}$")
@@ -71,9 +75,12 @@ def parse_iso(ts):
     if s.endswith("Z"):
         s = s[:-1] + "+00:00"
     try:
-        return datetime.fromisoformat(s)
+        dt = datetime.fromisoformat(s)
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def age_hours(last, now):
@@ -123,16 +130,22 @@ def _collect_borg(conf):
     data = parse_json_blob(run_cmd(["borg", "list", "--json", repo], env=env))
     if not isinstance(data, dict):
         return rec
-    rec["snapshots"] = len(data)
+    archives = data.get("archives")
+    if not isinstance(archives, list):
+        archives = []
+    rec["snapshots"] = len(archives)
     latest = None
     latest_dt = None
-    for key in data:
-        dt = parse_iso(key)
+    for arc in archives:
+        if not isinstance(arc, dict):
+            continue
+        ts = arc.get("start")
+        dt = parse_iso(ts)
         if dt is None:
             continue
         if latest_dt is None or dt > latest_dt:
             latest_dt = dt
-            latest = key
+            latest = ts
     if latest is not None:
         rec["last_ts"] = latest
         rec["age_hours"] = age_hours(latest_dt, time.time())
